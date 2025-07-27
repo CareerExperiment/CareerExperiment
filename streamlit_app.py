@@ -1,17 +1,22 @@
 import streamlit as st
-import openai
-import os
+from transformers import pipeline
 
-# Load your API key from environment variable or directly (for testing only)
-openai.api_key = st.secrets["OPENAI_API_KEY"] if "OPENAI_API_KEY" in st.secrets else os.getenv("OPENAI_API_KEY")
+# Setup text generation pipeline (distilgpt2 for speed and no API needed)
+@st.cache_resource(show_spinner=False)
+def get_generator():
+    return pipeline("text-generation", model="distilgpt2")
 
-st.set_page_config(page_title="Your First Career Experiment", page_icon="💡")
+generator = get_generator()
 
-st.title("💡 Your First Career Experiment")
-st.subheader("Break the ice with small, low-risk steps toward a new career.")
+st.set_page_config(page_title="💡 Career Exploration Assistant", page_icon="💡")
 
-career_interest = st.text_input("🎯 What career or role are you curious about?", placeholder="e.g. UX Designer, Data Analyst, Sustainability Consultant")
+st.title("💡 Your Career Exploration Assistant")
+st.write("Let's break down your career curiosity into simple, meaningful steps.")
 
+# Step 1: Get career interest
+career_interest = st.text_input("🎯 What career or role are you curious about?", placeholder="e.g. UX Designer, Data Analyst")
+
+# Step 2: Identify biggest constraint
 constraint = st.selectbox(
     "⛔ What's holding you back the most?",
     [
@@ -22,38 +27,68 @@ constraint = st.selectbox(
     ]
 )
 
-submit = st.button("Generate My Experiments")
+# Step 3: Motivation & resources check - multi-select
+motivations = st.multiselect(
+    "🌟 What motivates you? (Select all that apply)",
+    [
+        "Learning new skills",
+        "Connecting with people",
+        "Making an impact",
+        "Finding flexible work",
+        "Earning more money",
+        "Work-life balance"
+    ]
+)
 
-if submit and career_interest:
-    with st.spinner("Generating ideas..."):
+resources = st.multiselect(
+    "🔧 What resources do you have available? (Select all that apply)",
+    [
+        "Internet access",
+        "Professional network",
+        "Free time during evenings/weekends",
+        "Financial buffer",
+        "Mentor or coach"
+    ]
+)
 
-        prompt = f"""
-        You are a friendly and practical AI coach. The user wants to explore a career in {career_interest}.
+submit = st.button("Generate My Low-Risk Career Experiments")
 
-        They feel stuck because: "{constraint}"
+def create_prompt(career, constraint, motivations, resources):
+    motivations_str = ", ".join(motivations) if motivations else "no specific motivations"
+    resources_str = ", ".join(resources) if resources else "no particular resources"
 
-        Suggest 3 specific, low-effort experiments they can try in the next 7 days to explore this path.
+    prompt = (
+        f"You are a friendly and practical career coach AI.\n"
+        f"The user is curious about the career: {career}.\n"
+        f"They feel stuck because: \"{constraint}\".\n"
+        f"Their main motivations are: {motivations_str}.\n"
+        f"They currently have these resources: {resources_str}.\n"
+        "Suggest 3 specific, simple experiments they can do in the next 7 days to explore this career path.\n"
+        "- Each experiment should take 1-2 hours or less.\n"
+        "- Low risk and non-intimidating.\n"
+        "- Focused on learning or building connections.\n"
+        "- Written clearly and supportively.\n"
+        "Label them 1, 2, and 3, then end with a short encouragement message."
+    )
+    return prompt
 
-        Each experiment should be:
-        - Doable in under 1–2 hours
-        - Low-risk and non-intimidating
-        - Focused on learning or building connections
-        - Written in a clear, supportive tone
+if submit:
+    if not career_interest.strip():
+        st.warning("Please enter your career interest before submitting.")
+    else:
+        prompt = create_prompt(career_interest, constraint, motivations, resources)
 
-        Label them 1, 2, 3. End with a short encouragement message.
-        """
+        with st.spinner("Generating career experiments..."):
+            # Use Hugging Face distilgpt2 generation (text-generation pipeline)
+            # We limit output tokens to ~250 for response length
+            output = generator(prompt, max_length=250, do_sample=True, temperature=0.8, num_return_sequences=1)
+            generated_text = output[0]["generated_text"]
 
-        try:
-            response = openai.ChatCompletion.create(
-                model="gpt-4",
-                messages=[{"role": "user", "content": prompt}],
-                temperature=0.8,
-                max_tokens=500,
-            )
-            result = response.choices[0].message.content
-            st.markdown(result)
-        except Exception as e:
-            st.error(f"Something went wrong: {e}")
+        # Show result
+        st.markdown("### Your Low-Risk Career Experiments:")
+        # Display generated text removing the prompt prefix (optional)
+        # Here just show whole text for transparency
+        st.write(generated_text)
+
 else:
-    st.info("Fill in your interest and press the button to get ideas!")
-
+    st.info("Fill in your career interest and select options, then press the button to get your personalized experiments!")
